@@ -1,0 +1,16 @@
+fastapi
+uvicorn[standard]
+python-multipart
+numpy
+soundfile
+scipy
+torch
+safetensors
+pydantic
+requests
+huggingface_hub
+
+# pocket_tts is not on PyPI.
+# Accept terms at https://huggingface.co/kyutai/pocket-tts, then:
+#   huggingface-cli login
+# The server will download weights automatically on first launch.

@@ -1,0 +1,1515 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VOICELAB // Neural Voice Interface</title>
+<script src="https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.min.js"></script>
+<style>
+  :root {
+    --bg:      #050508;
+    --panel:   #08080f;
+    --border:  #1a1a30;
+    --cyan:    #00e5ff;
+    --magenta: #e040fb;
+    --green:   #00e676;
+    --amber:   #ffab40;
+    --red:     #ff1744;
+    --text:    #b0bec5;
+    --dim:     #455a64;
+    --glow-c:  0 0 12px rgba(0,229,255,0.6);
+    --glow-m:  0 0 12px rgba(224,64,251,0.6);
+    --glow-g:  0 0 12px rgba(0,230,118,0.6);
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Courier New', Courier, monospace;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── Matrix rain ── */
+  #matrix {
+    position: fixed; inset: 0; z-index: 0;
+    opacity: 0.07; pointer-events: none;
+  }
+
+  /* ── Scanlines ── */
+  body::after {
+    content: '';
+    position: fixed; inset: 0; z-index: 1;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.08) 2px,
+      rgba(0,0,0,0.08) 4px
+    );
+    pointer-events: none;
+  }
+
+  /* ── Layout ── */
+  #app {
+    position: relative; z-index: 2;
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 0 20px 60px;
+  }
+
+  /* ── Header ── */
+  header {
+    text-align: center;
+    padding: 40px 0 28px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 28px;
+  }
+
+  .glitch {
+    font-size: clamp(2rem, 6vw, 3.2rem);
+    font-weight: 900;
+    letter-spacing: 0.15em;
+    color: var(--cyan);
+    text-shadow: var(--glow-c);
+    position: relative;
+    display: inline-block;
+    user-select: none;
+  }
+  .glitch::before, .glitch::after {
+    content: attr(data-text);
+    position: absolute;
+    top: 0; left: 0; width: 100%; height: 100%;
+    pointer-events: none;
+  }
+  .glitch::before {
+    color: var(--magenta);
+    clip-path: polygon(0 0, 100% 0, 100% 35%, 0 35%);
+    animation: glitch-a 3.5s infinite;
+  }
+  .glitch::after {
+    color: var(--green);
+    clip-path: polygon(0 65%, 100% 65%, 100% 100%, 0 100%);
+    animation: glitch-b 3.5s infinite;
+  }
+  @keyframes glitch-a {
+    0%,90%,100%  { transform: translate(0); opacity: 0; }
+    92%  { transform: translate(-4px,0); opacity: 1; }
+    94%  { transform: translate(4px,0);  opacity: 1; }
+    96%  { transform: translate(0);      opacity: 0; }
+  }
+  @keyframes glitch-b {
+    0%,90%,100%  { transform: translate(0); opacity: 0; }
+    93%  { transform: translate(4px,0);  opacity: 1; }
+    95%  { transform: translate(-4px,0); opacity: 1; }
+    97%  { transform: translate(0);      opacity: 0; }
+  }
+
+  .subtitle {
+    display: block;
+    margin-top: 8px;
+    font-size: 0.72rem;
+    color: var(--dim);
+    letter-spacing: 0.2em;
+  }
+
+  /* ── Tabs ── */
+  .tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 24px;
+    border-bottom: 1px solid var(--border);
+  }
+  .tab-btn {
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--dim);
+    font-family: inherit;
+    font-size: 0.8rem;
+    letter-spacing: 0.18em;
+    padding: 10px 22px 12px;
+    cursor: pointer;
+    transition: color .2s, border-color .2s, text-shadow .2s;
+    margin-bottom: -1px;
+  }
+  .tab-btn:hover { color: var(--cyan); }
+  .tab-btn.active {
+    color: var(--cyan);
+    border-bottom-color: var(--cyan);
+    text-shadow: var(--glow-c);
+  }
+
+  /* ── Tab panels ── */
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  /* ── Panel card ── */
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 22px 24px;
+    margin-bottom: 18px;
+    position: relative;
+  }
+  .card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; height: 2px;
+    background: linear-gradient(90deg, var(--cyan), var(--magenta));
+    border-radius: 3px 3px 0 0;
+  }
+  .card-title {
+    font-size: 0.72rem;
+    letter-spacing: 0.22em;
+    color: var(--cyan);
+    text-transform: uppercase;
+    margin-bottom: 18px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .card-title::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  /* ── Drop zone ── */
+  .dropzone {
+    border: 2px dashed var(--border);
+    border-radius: 3px;
+    padding: 36px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color .25s, background .25s;
+    position: relative;
+  }
+  .dropzone:hover, .dropzone.drag-over {
+    border-color: var(--cyan);
+    background: rgba(0,229,255,0.04);
+  }
+  .dropzone input[type=file] {
+    position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+  }
+  .dropzone .dz-icon {
+    font-size: 2.4rem;
+    margin-bottom: 10px;
+    color: var(--dim);
+    display: block;
+  }
+  .dropzone .dz-label {
+    font-size: 0.78rem;
+    letter-spacing: 0.12em;
+    color: var(--dim);
+    text-transform: uppercase;
+  }
+  .dropzone .dz-filename {
+    margin-top: 10px;
+    font-size: 0.82rem;
+    color: var(--green);
+    text-shadow: var(--glow-g);
+    display: none;
+  }
+  .dropzone.has-file .dz-filename { display: block; }
+  .dropzone.has-file .dz-label    { display: none; }
+  .dropzone.has-file .dz-icon     { color: var(--green); }
+
+  /* ── Buttons ── */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    background: transparent;
+    border: 1px solid currentColor;
+    color: var(--cyan);
+    font-family: inherit;
+    font-size: 0.75rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    padding: 9px 20px;
+    cursor: pointer;
+    border-radius: 2px;
+    transition: background .2s, box-shadow .2s, color .2s;
+    white-space: nowrap;
+  }
+  .btn:hover:not(:disabled) {
+    background: rgba(0,229,255,0.08);
+    box-shadow: var(--glow-c);
+  }
+  .btn:disabled { opacity: 0.35; cursor: not-allowed; }
+  .btn.btn-magenta { color: var(--magenta); }
+  .btn.btn-magenta:hover:not(:disabled) {
+    background: rgba(224,64,251,0.08);
+    box-shadow: var(--glow-m);
+  }
+  .btn.btn-green { color: var(--green); }
+  .btn.btn-green:hover:not(:disabled) {
+    background: rgba(0,230,118,0.08);
+    box-shadow: var(--glow-g);
+  }
+  .btn.btn-red { color: var(--red); }
+  .btn.btn-red:hover:not(:disabled) {
+    background: rgba(255,23,68,0.08);
+    box-shadow: 0 0 12px rgba(255,23,68,0.5);
+  }
+  .btn.btn-sm { font-size: 0.68rem; padding: 6px 13px; letter-spacing: 0.14em; }
+  .btn-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+
+  /* ── Text / Textarea inputs ── */
+  .field-label {
+    display: block;
+    font-size: 0.68rem;
+    letter-spacing: 0.18em;
+    color: var(--dim);
+    text-transform: uppercase;
+    margin-bottom: 7px;
+  }
+  .field-input, .field-textarea, .field-select {
+    width: 100%;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 0.88rem;
+    padding: 10px 13px;
+    outline: none;
+    transition: border-color .2s, box-shadow .2s;
+    resize: none;
+  }
+  .field-input:focus, .field-textarea:focus, .field-select:focus {
+    border-color: var(--cyan);
+    box-shadow: 0 0 0 1px rgba(0,229,255,0.2);
+  }
+  .field-textarea { min-height: 80px; }
+  .field-select option { background: #0a0a18; }
+  .field-row { margin-bottom: 14px; }
+
+  /* ── Waveform ── */
+  .waveform-wrap {
+    background: rgba(0,0,0,0.4);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    padding: 14px 14px 10px;
+    margin-top: 14px;
+  }
+  .waveform-wrap.hidden { display: none; }
+  .waveform-label {
+    font-size: 0.65rem;
+    letter-spacing: 0.2em;
+    color: var(--dim);
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+
+  /* ── Status terminal ── */
+  .terminal {
+    background: rgba(0,0,0,0.5);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    padding: 10px 14px;
+    font-size: 0.75rem;
+    color: var(--green);
+    min-height: 38px;
+    max-height: 80px;
+    overflow-y: auto;
+    margin-top: 14px;
+    line-height: 1.6;
+  }
+  .terminal .line { opacity: 0.9; }
+  .terminal .line.err { color: var(--red); }
+  .terminal .line.info { color: var(--cyan); }
+  .terminal .line.dim { color: var(--dim); }
+
+  /* ── Save row ── */
+  .save-row {
+    display: flex;
+    gap: 10px;
+    align-items: flex-end;
+    margin-top: 14px;
+  }
+  .save-row .field-input { flex: 1; }
+
+  /* ── Fuse voice row ── */
+  .fuse-voice-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    background: rgba(0,229,255,0.03);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    margin-bottom: 8px;
+  }
+  .fuse-voice-name {
+    font-size: 0.82rem;
+    color: var(--cyan);
+    min-width: 140px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .fuse-slider-wrap { flex: 1; display: flex; align-items: center; gap: 10px; }
+  .fuse-slider {
+    flex: 1;
+    -webkit-appearance: none;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--border);
+    outline: none;
+    cursor: pointer;
+  }
+  .fuse-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px; height: 14px;
+    background: var(--cyan);
+    border-radius: 0;
+    box-shadow: var(--glow-c);
+    cursor: pointer;
+    transition: background .2s;
+  }
+  .fuse-slider:hover::-webkit-slider-thumb { background: var(--magenta); box-shadow: var(--glow-m); }
+  .fuse-slider-val {
+    font-size: 0.78rem;
+    color: var(--cyan);
+    min-width: 36px;
+    text-align: right;
+  }
+
+  /* ── Arsenal voice grid ── */
+  .voice-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 12px;
+  }
+  .voice-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    transition: border-color .2s, box-shadow .2s;
+  }
+  .voice-card:hover {
+    border-color: rgba(0,229,255,0.35);
+    box-shadow: 0 0 16px rgba(0,229,255,0.08);
+  }
+  .voice-card-name {
+    font-size: 0.85rem;
+    color: var(--text);
+    word-break: break-all;
+    flex: 1;
+  }
+  .voice-card-actions { display: flex; gap: 6px; }
+
+  /* ── Spinner ── */
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spinner {
+    display: inline-block;
+    width: 12px; height: 12px;
+    border: 2px solid var(--border);
+    border-top-color: var(--cyan);
+    border-radius: 50%;
+    animation: spin .7s linear infinite;
+    vertical-align: middle;
+  }
+
+  /* ── Divider ── */
+  .divider {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 18px 0;
+  }
+
+  /* ── Pulse badge ── */
+  .badge {
+    display: inline-block;
+    font-size: 0.62rem;
+    letter-spacing: 0.16em;
+    padding: 2px 8px;
+    border-radius: 2px;
+    text-transform: uppercase;
+    border: 1px solid currentColor;
+  }
+  .badge-green { color: var(--green); border-color: rgba(0,230,118,0.4); background: rgba(0,230,118,0.07); }
+  .badge-cyan  { color: var(--cyan);  border-color: rgba(0,229,255,0.4); background: rgba(0,229,255,0.07); }
+  .badge-dim   { color: var(--dim);   border-color: rgba(69,90,100,0.4); background: transparent; }
+
+  /* ── Synth param grid ── */
+  .param-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+  .param-row {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .param-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+  }
+  .param-name {
+    font-size: 0.68rem;
+    letter-spacing: 0.16em;
+    color: var(--dim);
+    text-transform: uppercase;
+  }
+  .param-value {
+    font-size: 0.82rem;
+    color: var(--cyan);
+    font-weight: bold;
+    min-width: 52px;
+    text-align: right;
+  }
+  .param-hint {
+    font-size: 0.62rem;
+    color: var(--dim);
+    letter-spacing: 0.1em;
+    margin-top: -2px;
+  }
+  .param-slider {
+    -webkit-appearance: none;
+    width: 100%;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--border);
+    outline: none;
+    cursor: pointer;
+  }
+  .param-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px; height: 14px;
+    background: var(--magenta);
+    border-radius: 0;
+    box-shadow: var(--glow-m);
+    cursor: pointer;
+    transition: background .2s;
+  }
+  .param-slider:hover::-webkit-slider-thumb { background: var(--cyan); box-shadow: var(--glow-c); }
+</style>
+</head>
+<body>
+
+<canvas id="matrix"></canvas>
+
+<div id="app">
+  <header>
+    <h1 class="glitch" data-text="VOICELAB">VOICELAB</h1>
+    <span class="subtitle">// neural voice synthesis interface //</span>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab-btn active" data-tab="clone">[ CLONE ]</button>
+    <button class="tab-btn"        data-tab="fuse" >[ FUSE  ]</button>
+    <button class="tab-btn"        data-tab="test" >[ TEST  ]</button>
+    <button class="tab-btn"        data-tab="synth">[ SYNTH ]</button>
+    <button class="tab-btn"        data-tab="arsenal">[ ARSENAL ]</button>
+  </nav>
+
+  <!-- ═══════════════ CLONE TAB ═══════════════ -->
+  <div class="tab-panel active" id="tab-clone">
+
+    <div id="clone-no-cloning-warn" class="card" style="display:none;border-color:rgba(255,171,64,0.4);background:rgba(255,171,64,0.04);">
+      <div class="card-title" style="color:var(--amber);">⚠ voice cloning unavailable</div>
+      <p style="font-size:.8rem;line-height:1.7;color:var(--text);">
+        The model loaded without voice-cloning weights.<br>
+        To enable cloning from raw audio:<br>
+        <span style="color:var(--amber);">1.</span> Accept terms at <span style="color:var(--cyan);">huggingface.co/kyutai/pocket-tts</span><br>
+        <span style="color:var(--amber);">2.</span> Run: <code style="color:var(--green);">python -m huggingface_hub.commands.huggingface_cli login</code><br>
+        <span style="color:var(--amber);">3.</span> Delete cached weights and restart the server.
+      </p>
+    </div>
+
+    <div class="card">
+      <div class="card-title">01 // upload source audio</div>
+      <div class="dropzone" id="dz-clone">
+        <input type="file" id="clone-file-input" accept="audio/*">
+        <span class="dz-icon">◈</span>
+        <div class="dz-label">Drag &amp; drop audio file<br><small style="opacity:.5">wav · mp3 · flac · ogg</small></div>
+        <div class="dz-filename" id="clone-dz-filename"></div>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-magenta" id="clone-encode-btn" disabled>
+          <span class="spinner" id="clone-encode-spin" style="display:none"></span>
+          ▶ ENCODE VOICE
+        </button>
+        <span id="clone-encoded-badge" class="badge badge-green" style="display:none">● ENCODED</span>
+      </div>
+    </div>
+
+    <div class="card" id="clone-test-card" style="opacity:.4; pointer-events:none;">
+      <div class="card-title">02 // test voice</div>
+      <div class="field-row">
+        <label class="field-label">text to synthesize</label>
+        <textarea class="field-textarea" id="clone-text" placeholder="Enter text to speak..."></textarea>
+      </div>
+      <div class="btn-row">
+        <button class="btn" id="clone-gen-btn" disabled>
+          <span class="spinner" id="clone-gen-spin" style="display:none"></span>
+          ◈ GENERATE
+        </button>
+      </div>
+      <div class="waveform-wrap hidden" id="clone-waveform-wrap">
+        <div class="waveform-label">▷ waveform output</div>
+        <div id="clone-waveform"></div>
+        <div class="btn-row" style="margin-top:10px;">
+          <button class="btn btn-sm" id="clone-play-btn">▶ PLAY</button>
+          <button class="btn btn-sm btn-green" id="clone-dl-btn">⬇ SAVE WAV</button>
+        </div>
+      </div>
+      <div class="terminal" id="clone-terminal"><div class="line dim">&gt; waiting for input...</div></div>
+    </div>
+
+    <div class="card" id="clone-save-card" style="opacity:.4; pointer-events:none;">
+      <div class="card-title">03 // save voice to arsenal</div>
+      <div class="save-row">
+        <input class="field-input" id="clone-save-name" placeholder="voice_name" maxlength="64">
+        <button class="btn btn-green" id="clone-save-btn" disabled>
+          <span class="spinner" id="clone-save-spin" style="display:none"></span>
+          ✦ SAVE
+        </button>
+      </div>
+    </div>
+
+  </div><!-- /clone tab -->
+
+  <!-- ═══════════════ FUSE TAB ═══════════════ -->
+  <div class="tab-panel" id="tab-fuse">
+
+    <div class="card">
+      <div class="card-title">01 // select voices to fuse</div>
+      <div class="field-row" style="display:flex;gap:10px;align-items:flex-end;">
+        <div style="flex:1;">
+          <label class="field-label">add voice</label>
+          <select class="field-select" id="fuse-voice-select">
+            <option value="">-- select voice --</option>
+          </select>
+        </div>
+        <button class="btn" id="fuse-add-btn" style="margin-bottom:0;">+ ADD</button>
+      </div>
+      <div id="fuse-voice-list" style="margin-top:4px;"></div>
+      <div class="btn-row">
+        <button class="btn btn-magenta" id="fuse-go-btn" disabled>
+          <span class="spinner" id="fuse-go-spin" style="display:none"></span>
+          ⊕ FUSE VOICES
+        </button>
+        <span id="fuse-ready-badge" class="badge badge-cyan" style="display:none">● FUSED</span>
+      </div>
+    </div>
+
+    <div class="card" id="fuse-test-card" style="opacity:.4; pointer-events:none;">
+      <div class="card-title">02 // test fused voice</div>
+      <div class="field-row">
+        <label class="field-label">text to synthesize</label>
+        <textarea class="field-textarea" id="fuse-text" placeholder="Enter text to speak..."></textarea>
+      </div>
+      <div class="btn-row">
+        <button class="btn" id="fuse-gen-btn" disabled>
+          <span class="spinner" id="fuse-gen-spin" style="display:none"></span>
+          ◈ GENERATE
+        </button>
+      </div>
+      <div class="waveform-wrap hidden" id="fuse-waveform-wrap">
+        <div class="waveform-label">▷ waveform output</div>
+        <div id="fuse-waveform"></div>
+        <div class="btn-row" style="margin-top:10px;">
+          <button class="btn btn-sm" id="fuse-play-btn">▶ PLAY</button>
+          <button class="btn btn-sm btn-green" id="fuse-dl-btn">⬇ SAVE WAV</button>
+        </div>
+      </div>
+      <div class="terminal" id="fuse-terminal"><div class="line dim">&gt; waiting for fuse...</div></div>
+    </div>
+
+    <div class="card" id="fuse-save-card" style="opacity:.4; pointer-events:none;">
+      <div class="card-title">03 // save fused voice</div>
+      <div class="save-row">
+        <input class="field-input" id="fuse-save-name" placeholder="fused_voice_name" maxlength="64">
+        <button class="btn btn-green" id="fuse-save-btn" disabled>
+          <span class="spinner" id="fuse-save-spin" style="display:none"></span>
+          ✦ SAVE
+        </button>
+      </div>
+    </div>
+
+  </div><!-- /fuse tab -->
+
+  <!-- ═══════════════ SYNTH TAB ═══════════════ -->
+  <div class="tab-panel" id="tab-synth">
+
+    <div class="card">
+      <div class="card-title">01 // select base voice</div>
+      <div class="field-row" style="display:flex;gap:10px;align-items:flex-end;">
+        <div style="flex:1;">
+          <label class="field-label">saved voice</label>
+          <select class="field-select" id="synth-voice-select">
+            <option value="">-- select voice --</option>
+          </select>
+        </div>
+        <button class="btn btn-sm" id="synth-refresh-btn">↺ REFRESH</button>
+      </div>
+    </div>
+
+    <div class="card" id="synth-params-card" style="opacity:.4; pointer-events:none;">
+      <div class="card-title">02 // voice parameters</div>
+
+      <div class="param-grid">
+
+        <div class="param-row">
+          <div class="param-header">
+            <span class="param-name">Expressiveness</span>
+            <span class="param-value" id="sv-temp">0.70</span>
+          </div>
+          <div class="param-hint">temperature · variation in delivery</div>
+          <input type="range" class="param-slider" id="sp-temp"
+            min="0.05" max="2.0" step="0.05" value="0.7">
+        </div>
+
+        <div class="param-row">
+          <div class="param-header">
+            <span class="param-name">Speed</span>
+            <span class="param-value" id="sv-speed">1.00×</span>
+          </div>
+          <div class="param-hint">playback rate · &lt;1 slower, &gt;1 faster</div>
+          <input type="range" class="param-slider" id="sp-speed"
+            min="0.4" max="2.0" step="0.05" value="1.0">
+        </div>
+
+        <div class="param-row">
+          <div class="param-header">
+            <span class="param-name">Pitch</span>
+            <span class="param-value" id="sv-pitch">0.0 st</span>
+          </div>
+          <div class="param-hint">semitones · negative = lower, positive = higher</div>
+          <input type="range" class="param-slider" id="sp-pitch"
+            min="-8" max="8" step="0.5" value="0">
+        </div>
+
+        <div class="param-row">
+          <div class="param-header">
+            <span class="param-name">Trailing Length</span>
+            <span class="param-value" id="sv-eos">-4.0</span>
+          </div>
+          <div class="param-hint">eos threshold · more negative = more trailing speech</div>
+          <input type="range" class="param-slider" id="sp-eos"
+            min="-10.0" max="0.0" step="0.5" value="-4.0">
+        </div>
+
+        <div class="param-row">
+          <div class="param-header">
+            <span class="param-name">Quality</span>
+            <span class="param-value" id="sv-lsd">1 step</span>
+          </div>
+          <div class="param-hint">lsd decode steps · more = better but slower</div>
+          <input type="range" class="param-slider" id="sp-lsd"
+            min="1" max="6" step="1" value="1">
+        </div>
+
+        <div class="param-row">
+          <div class="param-header">
+            <span class="param-name">Voice Intensity</span>
+            <span class="param-value" id="sv-scale">1.00×</span>
+          </div>
+          <div class="param-hint">embedding scale · affects character strength</div>
+          <input type="range" class="param-slider" id="sp-scale"
+            min="0.2" max="2.5" step="0.05" value="1.0">
+        </div>
+
+        <div class="param-row">
+          <div class="param-header">
+            <span class="param-name">Reference Length</span>
+            <span class="param-value" id="sv-trim">100%</span>
+          </div>
+          <div class="param-hint">portion of voice sample used · less = more abstract</div>
+          <input type="range" class="param-slider" id="sp-trim"
+            min="0.05" max="1.0" step="0.05" value="1.0">
+        </div>
+
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-sm" id="synth-reset-btn">↺ RESET DEFAULTS</button>
+      </div>
+    </div>
+
+    <div class="card" id="synth-gen-card" style="opacity:.4; pointer-events:none;">
+      <div class="card-title">03 // generate &amp; preview</div>
+      <div class="field-row">
+        <label class="field-label">text to synthesize</label>
+        <textarea class="field-textarea" id="synth-text" placeholder="Enter text to speak..."></textarea>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-magenta" id="synth-gen-btn" disabled>
+          <span class="spinner" id="synth-gen-spin" style="display:none"></span>
+          ◈ GENERATE
+        </button>
+      </div>
+      <div class="waveform-wrap hidden" id="synth-waveform-wrap">
+        <div class="waveform-label">▷ waveform output</div>
+        <div id="synth-waveform"></div>
+        <div class="btn-row" style="margin-top:10px;">
+          <button class="btn btn-sm" id="synth-play-btn">▶ PLAY</button>
+          <button class="btn btn-sm btn-green" id="synth-dl-btn">⬇ SAVE WAV</button>
+        </div>
+      </div>
+      <div class="terminal" id="synth-terminal"><div class="line dim">&gt; configure parameters and generate...</div></div>
+    </div>
+
+    <div class="card" id="synth-save-card" style="opacity:.4; pointer-events:none;">
+      <div class="card-title">04 // save modified voice to arsenal</div>
+      <p style="font-size:.75rem;color:var(--dim);margin-bottom:12px;line-height:1.6;">
+        Saves the modified voice embedding (intensity &amp; reference length applied) as a new entry in your arsenal.
+      </p>
+      <div class="save-row">
+        <input class="field-input" id="synth-save-name" placeholder="my_custom_voice" maxlength="64">
+        <button class="btn btn-green" id="synth-save-btn" disabled>
+          <span class="spinner" id="synth-save-spin" style="display:none"></span>
+          ✦ SAVE VOICE
+        </button>
+      </div>
+    </div>
+
+  </div><!-- /synth tab -->
+
+  <!-- ═══════════════ TEST TAB ═══════════════ -->
+  <div class="tab-panel" id="tab-test">
+
+    <div class="card">
+      <div class="card-title">01 // select saved voice</div>
+      <div class="field-row" style="display:flex;gap:10px;align-items:flex-end;">
+        <div style="flex:1;">
+          <label class="field-label">voice</label>
+          <select class="field-select" id="test-voice-select">
+            <option value="">-- select voice --</option>
+          </select>
+        </div>
+        <button class="btn btn-sm" id="test-refresh-btn" title="Refresh voice list">↺ REFRESH</button>
+      </div>
+    </div>
+
+    <div class="card" id="test-gen-card" style="opacity:.4; pointer-events:none;">
+      <div class="card-title">02 // generate speech</div>
+      <div class="field-row">
+        <label class="field-label">text to synthesize</label>
+        <textarea class="field-textarea" id="test-text" placeholder="Enter text to speak..."></textarea>
+      </div>
+      <div class="btn-row">
+        <button class="btn" id="test-gen-btn" disabled>
+          <span class="spinner" id="test-gen-spin" style="display:none"></span>
+          ◈ GENERATE
+        </button>
+      </div>
+      <div class="waveform-wrap hidden" id="test-waveform-wrap">
+        <div class="waveform-label">▷ waveform output</div>
+        <div id="test-waveform"></div>
+        <div class="btn-row" style="margin-top:10px;">
+          <button class="btn btn-sm" id="test-play-btn">▶ PLAY</button>
+          <button class="btn btn-sm btn-green" id="test-dl-btn">⬇ SAVE WAV</button>
+        </div>
+      </div>
+      <div class="terminal" id="test-terminal"><div class="line dim">&gt; select a voice to begin...</div></div>
+    </div>
+
+  </div><!-- /test tab -->
+
+  <!-- ═══════════════ ARSENAL TAB ═══════════════ -->
+  <div class="tab-panel" id="tab-arsenal">
+    <div class="card">
+      <div class="card-title">// voice arsenal</div>
+      <div id="arsenal-grid" class="voice-grid"></div>
+      <div id="arsenal-empty" style="font-size:.8rem;color:var(--dim);padding:20px 0;display:none;">
+        &gt; no voices found. clone or fuse voices to populate the arsenal.
+      </div>
+    </div>
+  </div>
+
+</div><!-- /app -->
+
+<script>
+/* ─────────────── Matrix rain ─────────────── */
+(function(){
+  const c = document.getElementById('matrix');
+  const ctx = c.getContext('2d');
+  function resize(){ c.width = innerWidth; c.height = innerHeight; }
+  resize();
+  window.addEventListener('resize', resize);
+  const cols = () => Math.floor(c.width / 16);
+  let drops = [];
+  function reset(){ drops = Array.from({length: cols()}, () => Math.random() * -100); }
+  reset();
+  window.addEventListener('resize', reset);
+  const chars = '01アイウエオカキクケコサシスセソタチツテトナニヌネノ';
+  setInterval(() => {
+    ctx.fillStyle = 'rgba(5,5,8,0.05)';
+    ctx.fillRect(0, 0, c.width, c.height);
+    ctx.fillStyle = '#00e676';
+    ctx.font = '13px Courier New';
+    drops.forEach((y, i) => {
+      const ch = chars[Math.floor(Math.random() * chars.length)];
+      ctx.fillText(ch, i * 16, y * 16);
+      if (y * 16 > c.height && Math.random() > 0.975) drops[i] = 0;
+      drops[i] += 0.5;
+    });
+  }, 55);
+})();
+
+/* ─────────────── Tab switching ─────────────── */
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+    if (btn.dataset.tab === 'arsenal') loadArsenal();
+    if (btn.dataset.tab === 'fuse') loadFuseDropdown();
+    if (btn.dataset.tab === 'test') loadTestDropdown();
+    if (btn.dataset.tab === 'synth') loadSynthDropdown();
+  });
+});
+
+/* ─────────────── Helpers ─────────────── */
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+async function postJSON(url, body) {
+  return fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
+function setCardActive(cardId, active) {
+  const el = document.getElementById(cardId);
+  el.style.opacity = active ? '1' : '0.4';
+  el.style.pointerEvents = active ? 'auto' : 'none';
+}
+
+function termLog(termId, msg, cls = '') {
+  const t = document.getElementById(termId);
+  const line = document.createElement('div');
+  line.className = 'line' + (cls ? ' ' + cls : '');
+  line.textContent = '> ' + msg;
+  t.innerHTML = '';
+  t.appendChild(line);
+  t.scrollTop = t.scrollHeight;
+}
+
+function setBusy(spinId, btnId, busy) {
+  document.getElementById(spinId).style.display = busy ? 'inline-block' : 'none';
+  document.getElementById(btnId).disabled = busy;
+}
+
+function showBadge(id, show) {
+  document.getElementById(id).style.display = show ? 'inline-block' : 'none';
+}
+
+/* ─────────────── WaveSurfer instances ─────────────── */
+let cloneWS = null, fuseWS = null;
+
+function initWS(containerId, wrapId, playBtnId) {
+  const ws = WaveSurfer.create({
+    container: '#' + containerId,
+    waveColor: '#00e5ff',
+    progressColor: '#e040fb',
+    cursorColor: '#00e676',
+    barWidth: 2,
+    barRadius: 1,
+    cursorWidth: 1,
+    height: 72,
+    barGap: 1,
+    interact: true,
+    normalize: true,
+  });
+  ws.on('finish', () => {
+    document.getElementById(playBtnId).textContent = '▶ PLAY';
+  });
+  document.getElementById(wrapId).classList.remove('hidden');
+  const playBtn = document.getElementById(playBtnId);
+  playBtn.onclick = () => {
+    if (ws.isPlaying()) { ws.pause(); playBtn.textContent = '▶ PLAY'; }
+    else { ws.play(); playBtn.textContent = '⏸ PAUSE'; }
+  };
+  return ws;
+}
+
+async function loadAudioIntoWS(wsRef, blobOrUrl, containerId, wrapId, playBtnId) {
+  if (wsRef && wsRef.destroy) wsRef.destroy();
+  const ws = initWS(containerId, wrapId, playBtnId);
+  if (blobOrUrl instanceof Blob) {
+    const url = URL.createObjectURL(blobOrUrl);
+    await ws.load(url);
+  } else {
+    await ws.load(blobOrUrl);
+  }
+  ws.play();
+  document.getElementById(playBtnId).textContent = '⏸ PAUSE';
+  return ws;
+}
+
+/* ─────────────── CLONE TAB ─────────────── */
+let cloneTempId = null;
+let cloneFile = null;
+
+const dzClone = document.getElementById('dz-clone');
+const cloneFileInput = document.getElementById('clone-file-input');
+
+function handleCloneFile(file) {
+  if (!file) return;
+  cloneFile = file;
+  document.getElementById('clone-dz-filename').textContent = '◈ ' + file.name;
+  dzClone.classList.add('has-file');
+  document.getElementById('clone-encode-btn').disabled = false;
+  cloneTempId = null;
+  showBadge('clone-encoded-badge', false);
+  setCardActive('clone-test-card', false);
+  setCardActive('clone-save-card', false);
+  document.getElementById('clone-gen-btn').disabled = true;
+  document.getElementById('clone-save-btn').disabled = true;
+}
+
+cloneFileInput.addEventListener('change', e => handleCloneFile(e.target.files[0]));
+dzClone.addEventListener('dragover', e => { e.preventDefault(); dzClone.classList.add('drag-over'); });
+dzClone.addEventListener('dragleave', () => dzClone.classList.remove('drag-over'));
+dzClone.addEventListener('drop', e => {
+  e.preventDefault();
+  dzClone.classList.remove('drag-over');
+  handleCloneFile(e.dataTransfer.files[0]);
+});
+
+document.getElementById('clone-encode-btn').addEventListener('click', async () => {
+  if (!cloneFile) return;
+  setBusy('clone-encode-spin', 'clone-encode-btn', true);
+  termLog('clone-terminal', 'encoding voice from audio...', 'info');
+  try {
+    const fd = new FormData();
+    fd.append('audio', cloneFile);
+    const res = await fetch('/api/clone', { method: 'POST', body: fd });
+    if (!res.ok) throw new Error((await res.json()).detail || res.statusText);
+    const data = await res.json();
+    cloneTempId = data.temp_id;
+    termLog('clone-terminal', 'voice encoded successfully.', '');
+    showBadge('clone-encoded-badge', true);
+    setCardActive('clone-test-card', true);
+    document.getElementById('clone-gen-btn').disabled = false;
+  } catch (err) {
+    termLog('clone-terminal', 'error: ' + err.message, 'err');
+  } finally {
+    setBusy('clone-encode-spin', 'clone-encode-btn', false);
+    document.getElementById('clone-encode-btn').disabled = false;
+  }
+});
+
+document.getElementById('clone-gen-btn').addEventListener('click', async () => {
+  const text = document.getElementById('clone-text').value.trim();
+  if (!text || !cloneTempId) return;
+  setBusy('clone-gen-spin', 'clone-gen-btn', true);
+  termLog('clone-terminal', 'synthesizing speech...', 'info');
+  try {
+    const res = await postJSON('/api/test', { voice_id: cloneTempId, text, is_temp: true });
+    if (!res.ok) throw new Error((await res.json()).detail || res.statusText);
+    const blob = await res.blob();
+    cloneLastBlob = blob;
+    cloneWS = await loadAudioIntoWS(cloneWS, blob, 'clone-waveform', 'clone-waveform-wrap', 'clone-play-btn');
+    termLog('clone-terminal', 'generation complete. playing audio.', '');
+    setCardActive('clone-save-card', true);
+    document.getElementById('clone-save-btn').disabled = false;
+  } catch (err) {
+    termLog('clone-terminal', 'error: ' + err.message, 'err');
+  } finally {
+    setBusy('clone-gen-spin', 'clone-gen-btn', false);
+    document.getElementById('clone-gen-btn').disabled = false;
+  }
+});
+
+document.getElementById('clone-save-btn').addEventListener('click', async () => {
+  const name = document.getElementById('clone-save-name').value.trim();
+  if (!name || !cloneTempId) return;
+  setBusy('clone-save-spin', 'clone-save-btn', true);
+  try {
+    const res = await postJSON('/api/save', { voice_id: cloneTempId, name, is_temp: true });
+    if (!res.ok) throw new Error((await res.json()).detail || res.statusText);
+    const data = await res.json();
+    termLog('clone-terminal', 'voice saved as "' + data.name + '" to arsenal.', '');
+    document.getElementById('clone-save-name').value = '';
+  } catch (err) {
+    termLog('clone-terminal', 'error: ' + err.message, 'err');
+  } finally {
+    setBusy('clone-save-spin', 'clone-save-btn', false);
+    document.getElementById('clone-save-btn').disabled = false;
+  }
+});
+
+/* ─────────────── FUSE TAB ─────────────── */
+let fuseVoices = [];   // [{name, weight}]
+let fuseTempId = null;
+
+async function loadFuseDropdown() {
+  try {
+    const res = await fetch('/api/voices');
+    const data = await res.json();
+    const sel = document.getElementById('fuse-voice-select');
+    sel.innerHTML = '<option value="">-- select voice --</option>';
+    data.voices.forEach(v => {
+      const opt = document.createElement('option');
+      opt.value = opt.textContent = v;
+      sel.appendChild(opt);
+    });
+  } catch (e) { /* ignore */ }
+}
+
+function redistributeWeights(lockedIdx) {
+  // Keep lockedIdx fixed; proportionally rescale all others to fill 100.
+  const locked = fuseVoices[lockedIdx].weight;
+  const remaining = 100 - locked;
+  const others = fuseVoices.map((_, i) => i).filter(i => i !== lockedIdx);
+  if (!others.length) return;
+  const othersTotal = others.reduce((s, i) => s + fuseVoices[i].weight, 0);
+  let distributed = 0;
+  others.forEach((i, pos) => {
+    if (pos === others.length - 1) {
+      fuseVoices[i].weight = Math.max(0, remaining - distributed);
+    } else {
+      const w = othersTotal > 0
+        ? Math.round(fuseVoices[i].weight / othersTotal * remaining)
+        : Math.round(remaining / others.length);
+      fuseVoices[i].weight = Math.max(0, w);
+      distributed += fuseVoices[i].weight;
+    }
+  });
+}
+
+function equalWeights() {
+  const each = Math.floor(100 / fuseVoices.length);
+  fuseVoices.forEach(v => { v.weight = each; });
+  fuseVoices[0].weight += 100 - each * fuseVoices.length; // absorb rounding
+}
+
+function syncSliderDom() {
+  fuseVoices.forEach((v, i) => {
+    const sl = document.querySelector(`.fuse-slider[data-idx="${i}"]`);
+    const sv = document.getElementById(`fuse-sv-${i}`);
+    if (sl) sl.value = v.weight;
+    if (sv) sv.textContent = v.weight + '%';
+  });
+}
+
+function renderFuseList() {
+  const list = document.getElementById('fuse-voice-list');
+  list.innerHTML = '';
+  fuseVoices.forEach((v, i) => {
+    const row = document.createElement('div');
+    row.className = 'fuse-voice-row';
+    row.innerHTML = `
+      <div class="fuse-voice-name" title="${escHtml(v.name)}">◈ ${escHtml(v.name)}</div>
+      <div class="fuse-slider-wrap">
+        <input type="range" class="fuse-slider" min="0" max="100" value="${v.weight}" data-idx="${i}">
+        <span class="fuse-slider-val" id="fuse-sv-${i}">${v.weight}%</span>
+      </div>
+      <button class="btn btn-red btn-sm" data-remove="${i}">✕</button>
+    `;
+    list.appendChild(row);
+  });
+
+  list.querySelectorAll('.fuse-slider').forEach(sl => {
+    sl.addEventListener('input', e => {
+      const idx = +e.target.dataset.idx;
+      fuseVoices[idx].weight = +e.target.value;
+      redistributeWeights(idx);
+      syncSliderDom();
+    });
+  });
+
+  list.querySelectorAll('[data-remove]').forEach(btn => {
+    btn.addEventListener('click', e => {
+      fuseVoices.splice(+e.target.dataset.remove, 1);
+      if (fuseVoices.length) equalWeights();
+      renderFuseList();
+      updateFuseGoBtn();
+      fuseTempId = null;
+      showBadge('fuse-ready-badge', false);
+      setCardActive('fuse-test-card', false);
+      setCardActive('fuse-save-card', false);
+      document.getElementById('fuse-gen-btn').disabled = true;
+      document.getElementById('fuse-save-btn').disabled = true;
+    });
+  });
+}
+
+function updateFuseGoBtn() {
+  document.getElementById('fuse-go-btn').disabled = fuseVoices.length < 2;
+}
+
+document.getElementById('fuse-add-btn').addEventListener('click', () => {
+  const sel = document.getElementById('fuse-voice-select');
+  const name = sel.value;
+  if (!name) return;
+  if (fuseVoices.find(v => v.name === name)) return; // no duplicates
+  fuseVoices.push({ name, weight: 0 });
+  equalWeights();
+  renderFuseList();
+  updateFuseGoBtn();
+  sel.value = '';
+});
+
+document.getElementById('fuse-go-btn').addEventListener('click', async () => {
+  if (fuseVoices.length < 2) return;
+  setBusy('fuse-go-spin', 'fuse-go-btn', true);
+  termLog('fuse-terminal', 'fusing voices...', 'info');
+  try {
+    const res = await postJSON('/api/fuse', {
+      voices: fuseVoices.map(v => v.name),
+      weights: fuseVoices.map(v => v.weight),
+    });
+    if (!res.ok) throw new Error((await res.json()).detail || res.statusText);
+    const data = await res.json();
+    fuseTempId = data.temp_id;
+    termLog('fuse-terminal', 'fusion complete. ready to test.', '');
+    showBadge('fuse-ready-badge', true);
+    setCardActive('fuse-test-card', true);
+    document.getElementById('fuse-gen-btn').disabled = false;
+  } catch (err) {
+    termLog('fuse-terminal', 'error: ' + err.message, 'err');
+  } finally {
+    setBusy('fuse-go-spin', 'fuse-go-btn', false);
+    document.getElementById('fuse-go-btn').disabled = fuseVoices.length < 2;
+  }
+});
+
+document.getElementById('fuse-gen-btn').addEventListener('click', async () => {
+  const text = document.getElementById('fuse-text').value.trim();
+  if (!text || !fuseTempId) return;
+  setBusy('fuse-gen-spin', 'fuse-gen-btn', true);
+  termLog('fuse-terminal', 'synthesizing speech...', 'info');
+  try {
+    const res = await postJSON('/api/test', { voice_id: fuseTempId, text, is_temp: true });
+    if (!res.ok) throw new Error((await res.json()).detail || res.statusText);
+    const blob = await res.blob();
+    fuseLastBlob = blob;
+    fuseWS = await loadAudioIntoWS(fuseWS, blob, 'fuse-waveform', 'fuse-waveform-wrap', 'fuse-play-btn');
+    termLog('fuse-terminal', 'generation complete. playing audio.', '');
+    setCardActive('fuse-save-card', true);
+    document.getElementById('fuse-save-btn').disabled = false;
+  } catch (err) {
+    termLog('fuse-terminal', 'error: ' + err.message, 'err');
+  } finally {
+    setBusy('fuse-gen-spin', 'fuse-gen-btn', false);
+    document.getElementById('fuse-gen-btn').disabled = false;
+  }
+});
+
+document.getElementById('fuse-save-btn').addEventListener('click', async () => {
+  const name = document.getElementById('fuse-save-name').value.trim();
+  if (!name || !fuseTempId) return;
+  setBusy('fuse-save-spin', 'fuse-save-btn', true);
+  try {
+    const res = await postJSON('/api/save', { voice_id: fuseTempId, name, is_temp: true });
+    if (!res.ok) throw new Error((await res.json()).detail || res.statusText);
+    const data = await res.json();
+    termLog('fuse-terminal', 'saved as "' + data.name + '" to arsenal.', '');
+    document.getElementById('fuse-save-name').value = '';
+  } catch (err) {
+    termLog('fuse-terminal', 'error: ' + err.message, 'err');
+  } finally {
+    setBusy('fuse-save-spin', 'fuse-save-btn', false);
+    document.getElementById('fuse-save-btn').disabled = false;
+  }
+});
+
+/* ─────────────── SYNTH TAB ─────────────── */
+let synthWS = null;
+let synthLastBlob = null;
+let synthTempId = null;
+
+const SYNTH_DEFAULTS = {
+  temp: 0.7, speed: 1.0, pitch: 0.0, eos: -4.0, lsd: 1, scale: 1.0, trim: 1.0
+};
+
+const synthParams = { ...SYNTH_DEFAULTS };
+
+function fmtTemp(v)  { return parseFloat(v).toFixed(2); }
+function fmtSpeed(v) { return parseFloat(v).toFixed(2) + '×'; }
+function fmtPitch(v) { const n = parseFloat(v).toFixed(1); return (n > 0 ? '+' : '') + n + ' st'; }
+function fmtEos(v)   { return parseFloat(v).toFixed(1); }
+function fmtLsd(v)   { return parseInt(v) + (parseInt(v) === 1 ? ' step' : ' steps'); }
+function fmtScale(v) { return parseFloat(v).toFixed(2) + '×'; }
+function fmtTrim(v)  { return Math.round(parseFloat(v) * 100) + '%'; }
+
+const synthSliders = [
+  { id: 'sp-temp',  valId: 'sv-temp',  key: 'temp',  fmt: fmtTemp  },
+  { id: 'sp-speed', valId: 'sv-speed', key: 'speed', fmt: fmtSpeed },
+  { id: 'sp-pitch', valId: 'sv-pitch', key: 'pitch', fmt: fmtPitch },
+  { id: 'sp-eos',   valId: 'sv-eos',   key: 'eos',   fmt: fmtEos   },
+  { id: 'sp-lsd',   valId: 'sv-lsd',   key: 'lsd',   fmt: fmtLsd   },
+  { id: 'sp-scale', valId: 'sv-scale', key: 'scale', fmt: fmtScale },
+  { id: 'sp-trim',  valId: 'sv-trim',  key: 'trim',  fmt: fmtTrim  },
+];
+
+synthSliders.forEach(({ id, valId, key, fmt }) => {
+  const el = document.getElementById(id);
+  el.addEventListener('input', e => {
+    synthParams[key] = parseFloat(e.target.value);
+    document.getElementById(valId).textContent = fmt(e.target.value);
+  });
+});
+
+document.getElementById('synth-reset-btn').addEventListener('click', () => {
+  synthSliders.forEach(({ id, valId, key, fmt }) => {
+    const el = document.getElementById(id);
+    el.value = SYNTH_DEFAULTS[key];
+    synthParams[key] = SYNTH_DEFAULTS[key];
+    document.getElementById(valId).textContent = fmt(SYNTH_DEFAULTS[key]);
+  });
+});
+
+async function loadSynthDropdown() {
+  try {
+    const res = await fetch('/api/voices');
+    const data = await res.json();
+    const sel = document.getElementById('synth-voice-select');
+    const prev = sel.value;
+    sel.innerHTML = '<option value="">-- select voice --</option>';
+    data.voices.forEach(v => {
+      const opt = document.createElement('option');
+      opt.value = opt.textContent = v;
+      sel.appendChild(opt);
+    });
+    if (prev && data.voices.includes(prev)) sel.value = prev;
+  } catch (e) { /* ignore */ }
+}
+
+document.getElementById('synth-refresh-btn').addEventListener('click', loadSynthDropdown);
+
+document.getElementById('synth-voice-select').addEventListener('change', e => {
+  const hasVoice = !!e.target.value;
+  setCardActive('synth-params-card', hasVoice);
+  setCardActive('synth-gen-card', hasVoice);
+  document.getElementById('synth-gen-btn').disabled = !hasVoice;
+  synthTempId = null;
+  setCardActive('synth-save-card', false);
+  document.getElementById('synth-save-btn').disabled = true;
+  if (hasVoice) termLog('synth-terminal', 'voice "' + e.target.value + '" loaded. adjust params and generate.', 'info');
+});
+
+document.getElementById('synth-gen-btn').addEventListener('click', async () => {
+  const voiceName = document.getElementById('synth-voice-select').value;
+  const text = document.getElementById('synth-text').value.trim();
+  if (!voiceName || !text) return;
+
+  setBusy('synth-gen-spin', 'synth-gen-btn', true);
+  termLog('synth-terminal', 'synthesizing with custom parameters...', 'info');
+
+  try {
+    const res = await postJSON('/api/synthesize', {
+      voice_id: voiceName,
+      text,
+      is_temp: false,
+      temperature: synthParams.temp,
+      eos_threshold: synthParams.eos,
+      lsd_steps: synthParams.lsd,
+      speed: synthParams.speed,
+      pitch: synthParams.pitch,
+      voice_scale: synthParams.scale,
+      voice_trim: synthParams.trim,
+    });
+    if (!res.ok) throw new Error((await res.json()).detail || res.statusText);
+
+    synthTempId = res.headers.get('X-Temp-Id');
+    const blob = await res.blob();
+    synthLastBlob = blob;
+    synthWS = await loadAudioIntoWS(synthWS, blob, 'synth-waveform', 'synth-waveform-wrap', 'synth-play-btn');
+    termLog('synth-terminal', 'generation complete. playing audio.', '');
+
+    if (synthTempId) {
+      setCardActive('synth-save-card', true);
+      document.getElementById('synth-save-btn').disabled = false;
+    }
+  } catch (err) {
+    termLog('synth-terminal', 'error: ' + err.message, 'err');
+  } finally {
+    setBusy('synth-gen-spin', 'synth-gen-btn', false);
+    document.getElementById('synth-gen-btn').disabled = false;
+  }
+});
+
+document.getElementById('synth-save-btn').addEventListener('click', async () => {
+  const name = document.getElementById('synth-save-name').value.trim();
+  if (!name || !synthTempId) return;
+  setBusy('synth-save-spin', 'synth-save-btn', true);
+  try {
+    const res = await postJSON('/api/save', { voice_id: synthTempId, name, is_temp: true });
+    if (!res.ok) throw new Error((await res.json()).detail || res.statusText);
+    const data = await res.json();
+    termLog('synth-terminal', 'voice saved as "' + data.name + '" to arsenal.', '');
+    document.getElementById('synth-save-name').value = '';
+    loadSynthDropdown();
+  } catch (err) {
+    termLog('synth-terminal', 'error: ' + err.message, 'err');
+  } finally {
+    setBusy('synth-save-spin', 'synth-save-btn', false);
+    document.getElementById('synth-save-btn').disabled = false;
+  }
+});
+
+/* ─────────────── WAV download helper ─────────────── */
+let cloneLastBlob = null, fuseLastBlob = null, testLastBlob = null;
+
+function downloadWav(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+document.getElementById('clone-dl-btn').addEventListener('click', () => {
+  if (cloneLastBlob) downloadWav(cloneLastBlob, 'clone_output.wav');
+});
+document.getElementById('fuse-dl-btn').addEventListener('click', () => {
+  if (fuseLastBlob) downloadWav(fuseLastBlob, 'fuse_output.wav');
+});
+
+/* ─────────────── TEST TAB ─────────────── */
+let testWS = null;
+
+async function loadTestDropdown() {
+  try {
+    const res = await fetch('/api/voices');
+    const data = await res.json();
+    const sel = document.getElementById('test-voice-select');
+    const prev = sel.value;
+    sel.innerHTML = '<option value="">-- select voice --</option>';
+    data.voices.forEach(v => {
+      const opt = document.createElement('option');
+      opt.value = opt.textContent = v;
+      sel.appendChild(opt);
+    });
+    if (prev && data.voices.includes(prev)) sel.value = prev;
+  } catch (e) { /* ignore */ }
+}
+
+document.getElementById('test-refresh-btn').addEventListener('click', loadTestDropdown);
+
+document.getElementById('test-voice-select').addEventListener('change', e => {
+  const hasVoice = !!e.target.value;
+  setCardActive('test-gen-card', hasVoice);
+  document.getElementById('test-gen-btn').disabled = !hasVoice;
+  if (!hasVoice) termLog('test-terminal', 'select a voice to begin...', 'dim');
+  else termLog('test-terminal', 'voice "' + e.target.value + '" selected. ready.', 'info');
+});
+
+document.getElementById('test-gen-btn').addEventListener('click', async () => {
+  const voiceName = document.getElementById('test-voice-select').value;
+  const text = document.getElementById('test-text').value.trim();
+  if (!voiceName || !text) return;
+  setBusy('test-gen-spin', 'test-gen-btn', true);
+  termLog('test-terminal', 'synthesizing speech...', 'info');
+  try {
+    const res = await postJSON('/api/test', { voice_id: voiceName, text, is_temp: false });
+    if (!res.ok) throw new Error((await res.json()).detail || res.statusText);
+    const blob = await res.blob();
+    testLastBlob = blob;
+    testWS = await loadAudioIntoWS(testWS, blob, 'test-waveform', 'test-waveform-wrap', 'test-play-btn');
+    termLog('test-terminal', 'generation complete. playing audio.', '');
+  } catch (err) {
+    termLog('test-terminal', 'error: ' + err.message, 'err');
+  } finally {
+    setBusy('test-gen-spin', 'test-gen-btn', false);
+    document.getElementById('test-gen-btn').disabled = false;
+  }
+});
+
+document.getElementById('test-dl-btn').addEventListener('click', () => {
+  if (testLastBlob) {
+    const name = document.getElementById('test-voice-select').value || 'test';
+    downloadWav(testLastBlob, name + '_output.wav');
+  }
+});
+document.getElementById('synth-dl-btn').addEventListener('click', () => {
+  if (synthLastBlob) {
+    const name = document.getElementById('synth-voice-select').value || 'synth';
+    downloadWav(synthLastBlob, name + '_synth.wav');
+  }
+});
+
+/* ─────────────── ARSENAL TAB ─────────────── */
+async function loadArsenal() {
+  try {
+    const res = await fetch('/api/voices');
+    const data = await res.json();
+    const grid = document.getElementById('arsenal-grid');
+    const empty = document.getElementById('arsenal-empty');
+    grid.innerHTML = '';
+    if (!data.voices.length) {
+      empty.style.display = 'block';
+      return;
+    }
+    empty.style.display = 'none';
+    data.voices.forEach(name => {
+      const card = document.createElement('div');
+      card.className = 'voice-card';
+
+      const nameDiv = document.createElement('div');
+      nameDiv.className = 'voice-card-name';
+      nameDiv.textContent = '◈ ' + name;
+
+      const actionsDiv = document.createElement('div');
+      actionsDiv.className = 'voice-card-actions';
+
+      const delBtn = document.createElement('button');
+      delBtn.className = 'btn btn-red btn-sm';
+      delBtn.dataset.del = name;
+      delBtn.textContent = '✕ DELETE';
+
+      actionsDiv.appendChild(delBtn);
+      card.appendChild(nameDiv);
+      card.appendChild(actionsDiv);
+      grid.appendChild(card);
+    });
+    grid.querySelectorAll('[data-del]').forEach(btn => {
+      btn.addEventListener('click', async e => {
+        const n = e.target.dataset.del;
+        if (!confirm(`Delete voice "${n}"?`)) return;
+        try {
+          const res = await fetch('/api/voices/' + encodeURIComponent(n), { method: 'DELETE' });
+          if (!res.ok) throw new Error((await res.json()).detail);
+          loadArsenal();
+        } catch (err) { alert('Error: ' + err.message); }
+      });
+    });
+  } catch (e) { /* ignore */ }
+}
+
+/* ─────────────── Init ─────────────── */
+loadFuseDropdown();
+loadTestDropdown();
+loadSynthDropdown();
+
+(async function checkStatus() {
+  try {
+    const res = await fetch('/api/status');
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.voice_cloning === false) {
+      document.getElementById('clone-no-cloning-warn').style.display = 'block';
+      document.getElementById('clone-encode-btn').disabled = true;
+      document.getElementById('clone-encode-btn').title = 'Voice cloning weights not available';
+    }
+  } catch (e) { /* server not yet ready */ }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find 'C:/Users/UBREAKIFIX/Desktop/Projects/Voice me please' -type f -name *.safetensors)",
+      "Bash(python3:*)",
+      "Bash(python:*)",
+      "Bash(xargs grep:*)",
+      "Bash(Get-ChildItem -Path \"Q:\\\\Projects\\\\Voice me please\" -Depth 2)",
+      "Bash(Select-Object FullName, Length, LastWriteTime)",
+      "Bash(Format-Table -AutoSize)"
+    ]
+  }
+}
